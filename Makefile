@@ -64,7 +64,8 @@ submission-files = $(assignment-files) \
   rand64-hw.c rand64-hw.h \
   rand64-sw.c rand64-sw.h \
   rand64-file.c rand64-file.h \
-  randall.c
+  randall.c \
+  test-llm.txt
 
 randall-submission.$(TAREXT): $(submission-files)
 	$(TAR) $(TARFLAGS) -cf $@ $(submission-files)

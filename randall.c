@@ -90,7 +90,9 @@ int main (int argc, char **argv){
       break;
   }
 
-  initialize();
+  if (initialize) {
+    initialize();
+  }
 
   // do {
   //     unsigned long long x = rand64 ();
@@ -106,63 +108,66 @@ int main (int argc, char **argv){
   long long bytes_left = options.nbytes;
   int word_size = sizeof(unsigned long long);
 
-  while (bytes_left > 0) {
-      unsigned long long value = rand64();
-      int output_bytes = (bytes_left < word_size) ? bytes_left : word_size;
+  char *buffer = NULL;
+  int buffer_index = 0;
 
-      bool success = false;
+  if (options.output_type == OUTPUT_SIZE) {
+    buffer = malloc(options.write_size);
+    if (!buffer) {
+      perror("malloc");
+      return 1;
+    }
+  }
+
+  while (bytes_left > 0) {
+    unsigned long long value = rand64();
+    int output_bytes = (bytes_left < word_size) ? bytes_left : word_size;
+
+    for (int i = 0; i < output_bytes; ++i) {
+      char byte = value & 0xFF;
+      value >>= 8;
 
       if (options.output_type == OUTPUT_STDOUT) {
-        success = writebytes(value, output_bytes);
-      } else if (options.output_type == OUTPUT_SIZE) {
-        static char *buffer = NULL;
-        static int buffer_size = 0;
+        if (!writebytes(byte, 1)) {
+          output_errno = errno;
+          goto cleanup;
+        }
+      } else { // OUTPUT_SIZE
+        buffer[buffer_index++] = byte;
 
-        if (!buffer || buffer_size < output_bytes) {
-          free(buffer);
-          buffer = malloc(options.write_size);
-          if (!buffer) {
-              perror("malloc");
-              return 1;
+        if (buffer_index == options.write_size) {
+          int written = write(STDOUT_FILENO, buffer, options.write_size);
+          if (written != options.write_size) {
+            output_errno = errno;
+            goto cleanup;
           }
-          buffer_size = options.write_size;
+          buffer_index = 0;
         }
-        for (int i = 0; i < output_bytes; ++i) {
-          buffer[i] = value & 0xFF;
-          value >>= 8;
-        }
-        int written_bytes = 0;
-        while (written_bytes < output_bytes) {
-            int result = write(STDOUT_FILENO, buffer + written_bytes, output_bytes - written_bytes);
-            if (result < 0) {
-                output_errno = errno;
-                success = false;
-                break;
-            }
-            written_bytes += result;
-        }
+      }
+    }
 
-        if (written_bytes != output_bytes){
-          output_errno = errno;
-          break;
-        }
-        success = true;
-      }
-      if (!success) {
-          output_errno = errno;
-          break;
-      }
-      bytes_left -= output_bytes;
+    bytes_left -= output_bytes;
   }
+
+  if (options.output_type == OUTPUT_SIZE && buffer_index > 0) {
+    int written = write(STDOUT_FILENO, buffer, buffer_index);
+    if (written != buffer_index) {
+      output_errno = errno;
+    }
+  }
+
+  cleanup:
+  if (buffer)
+    free(buffer);
 
   if (fclose(stdout) != 0)
     output_errno = errno;
 
-  if (output_errno){
+  if (output_errno) {
     errno = output_errno;
-    perror ("output");
+    perror("output");
   }
 
-  finalize ();
+  finalize();
   return !!output_errno;
 }
