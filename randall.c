@@ -29,81 +29,139 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h> 
 
 #include "rand64-hw.h"
 #include "rand64-sw.h"
 #include "output.h"
 #include "options.h"
+#include "rand64-file.h"
 
-int
-main (int argc, char **argv)
-{
-  /* Check arguments.  */
-  bool valid = false;
-  long long nbytes;
-  if (argc == 2)
-    {
-      char *endptr;
-      errno = 0;
-      nbytes = strtoll (argv[1], &endptr, 10);
-      if (errno)
-	perror (argv[1]);
-      else
-	valid = !*endptr && 0 <= nbytes;
-    }
-  if (!valid)
-    {
-      fprintf (stderr, "%s: usage: %s NBYTES\n", argv[0], argv[0]);
-      return 1;
-    }
+int main (int argc, char **argv){
+  Options options = parse_options(argc, argv);
+  if (!options.valid){
+    return 1;
+  }
+  // bool valid = false;
+  // long long nbytes;
+  // if (argc == 2){
+  //   char *endptr;
+  //   errno = 0;
+  //   nbytes = strtoll(argv[1], &endptr, 10);
+  //   if (errno) 
+  //     perror(argv[1]);
+  //   else
+	//     valid = !*endptr && 0 <= nbytes;
+  // }
+  // if (!valid){
+  //   fprintf (stderr, "%s: usage: %s NBYTES\n", argv[0], argv[0]);
+  //   return 1;
+  // }
 
-  /* If there's no work to do, don't worry about which library to use.  */
-  if (nbytes == 0)
+  if (options.nbytes == 0)
     return 0;
 
-  /* Now that we know we have work to do, arrange to use the
-     appropriate library.  */
   void (*initialize) (void);
   unsigned long long (*rand64) (void);
   void (*finalize) (void);
-  if (rdrand_supported ())
-    {
+  
+  switch (options.input_type){
+    case INPUT_RDRAND:
+      if (!rdrand_supported()) {
+          fprintf(stderr, "Error: RDRAND not supported.\n");
+          return 1;
+      }
       initialize = hardware_rand64_init;
       rand64 = hardware_rand64;
       finalize = hardware_rand64_fini;
-    }
-  else
-    {
+      break;
+
+    case INPUT_MRAND48:
       initialize = software_rand64_init;
       rand64 = software_rand64;
       finalize = software_rand64_fini;
-    }
+      break;
 
-  initialize ();
-  int wordsize = sizeof rand64 ();
+    case INPUT_FILE:
+      file_rand64_init(options.input_file);
+      initialize = NULL;
+      rand64 = file_rand64;
+      finalize = file_rand64_fini;
+      break;
+  }
+
+  initialize();
+
+  // do {
+  //     unsigned long long x = rand64 ();
+  //     int outbytes = nbytes < wordsize ? nbytes : wordsize;
+  //     if (!writebytes (x, outbytes)){
+  //       output_errno = errno;
+  //       break;
+  //     }
+  //     nbytes -= outbytes;
+  //   }
+  // while (0 < nbytes);
   int output_errno = 0;
+  long long bytes_left = options.nbytes;
+  int word_size = sizeof(unsigned long long);
 
-  do
-    {
-      unsigned long long x = rand64 ();
-      int outbytes = nbytes < wordsize ? nbytes : wordsize;
-      if (!writebytes (x, outbytes))
-	{
-	  output_errno = errno;
-	  break;
-	}
-      nbytes -= outbytes;
-    }
-  while (0 < nbytes);
+  while (bytes_left > 0) {
+      unsigned long long value = rand64();
+      int output_bytes = (bytes_left < word_size) ? bytes_left : word_size;
 
-  if (fclose (stdout) != 0)
+      bool success = false;
+
+      if (options.output_type == OUTPUT_STDOUT) {
+        success = writebytes(value, output_bytes);
+      } else if (options.output_type == OUTPUT_SIZE) {
+        static char *buffer = NULL;
+        static int buffer_size = 0;
+
+        if (!buffer || buffer_size < output_bytes) {
+          free(buffer);
+          buffer = malloc(options.write_size);
+          if (!buffer) {
+              perror("malloc");
+              return 1;
+          }
+          buffer_size = options.write_size;
+        }
+        for (int i = 0; i < output_bytes; ++i) {
+          buffer[i] = value & 0xFF;
+          value >>= 8;
+        }
+        int written_bytes = 0;
+        while (written_bytes < output_bytes) {
+            int result = write(STDOUT_FILENO, buffer + written_bytes, output_bytes - written_bytes);
+            if (result < 0) {
+                output_errno = errno;
+                success = false;
+                break;
+            }
+            written_bytes += result;
+        }
+
+        if (written_bytes != output_bytes){
+          output_errno = errno;
+          break;
+        }
+        success = true;
+      }
+      if (!success) {
+          output_errno = errno;
+          break;
+      }
+      bytes_left -= output_bytes;
+  }
+
+  if (fclose(stdout) != 0)
     output_errno = errno;
 
-  if (output_errno)
-    {
-      errno = output_errno;
-      perror ("output");
-    }
+  if (output_errno){
+    errno = output_errno;
+    perror ("output");
+  }
 
   finalize ();
   return !!output_errno;

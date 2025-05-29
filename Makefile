@@ -30,10 +30,10 @@ TAREXT = tgz
 
 default: randall
 
-randall: randall.o options.o output.o rand64-hw.o rand64-sw.o
+randall: randall.o options.o output.o rand64-hw.o rand64-sw.o rand64-file.o 
 	$(CC) $(CFLAGS) -o $@ $^
 
-randall.o: randall.c options.h output.h rand64-hw.h rand64-sw.h
+randall.o: randall.c options.h output.h rand64-hw.h rand64-sw.h rand64-file.h
 	$(CC) $(CFLAGS) -c $<
 
 options.o: options.c options.h
@@ -48,6 +48,9 @@ rand64-hw.o: rand64-hw.c rand64-hw.h
 rand64-sw.o: rand64-sw.c rand64-sw.h
 	$(CC) $(CFLAGS) -c $<
 
+rand64-file.o: rand64-file.c rand64-file.h
+	$(CC) $(CFLAGS) -c $<
+
 assignment: randall-assignment.$(TAREXT)
 assignment-files = COPYING Makefile randall.c
 randall-assignment.$(TAREXT): $(assignment-files)
@@ -55,7 +58,14 @@ randall-assignment.$(TAREXT): $(assignment-files)
 
 submission-tarball: randall-submission.$(TAREXT)
 submission-files = $(assignment-files) \
-  notes.txt # More files should be listed here, as needed.
+  notes.txt \
+  options.c options.h \
+  output.c output.h \
+  rand64-hw.c rand64-hw.h \
+  rand64-sw.c rand64-sw.h \
+  rand64-file.c rand64-file.h \
+  randall.c
+
 randall-submission.$(TAREXT): $(submission-files)
 	$(TAR) $(TARFLAGS) -cf $@ $(submission-files)
 
