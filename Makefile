@@ -30,8 +30,23 @@ TAREXT = tgz
 
 default: randall
 
-randall: randall.c
-	$(CC) $(CFLAGS) $@.c -o $@
+randall: randall.o options.o output.o rand64-hw.o rand64-sw.o
+	$(CC) $(CFLAGS) -o $@ $^
+
+randall.o: randall.c options.h output.h rand64-hw.h rand64-sw.h
+	$(CC) $(CFLAGS) -c $<
+
+options.o: options.c options.h
+	$(CC) $(CFLAGS) -c $<
+
+output.o: output.c output.h
+	$(CC) $(CFLAGS) -c $<
+
+rand64-hw.o: rand64-hw.c rand64-hw.h
+	$(CC) $(CFLAGS) -c $<
+	
+rand64-sw.o: rand64-sw.c rand64-sw.h
+	$(CC) $(CFLAGS) -c $<
 
 assignment: randall-assignment.$(TAREXT)
 assignment-files = COPYING Makefile randall.c
@@ -51,3 +66,8 @@ repository-tarball:
 
 clean:
 	rm -f *.o *.$(TAREXT) randall
+
+check:
+	@./randall 0 > check-zero.out
+	@wc -c < check-zero.out | grep -q '^0$$' && echo "Passed zero byte input check." || echo "Failed zero byte input check."
+	@rm -f check-zero.out
